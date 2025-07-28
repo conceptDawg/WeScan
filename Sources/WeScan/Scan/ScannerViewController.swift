@@ -13,20 +13,21 @@ import UIKit
 /// The `ScannerViewController` offers an interface to give feedback to the user regarding quadrilaterals that are detected. It also gives the user the opportunity to capture an image with a detected rectangle.
 public final class ScannerViewController: UIViewController {
 
-    private var captureSessionManager: CaptureSessionManager?
-    private let videoPreviewLayer = AVCaptureVideoPreviewLayer()
-
-    /// The view that shows the focus rectangle (when the user taps to focus, similar to the Camera app)
-    private var focusRectangle: FocusRectangleView!
-
-    /// The view that draws the detected rectangles.
-    private let quadView = QuadrilateralView()
-
     /// Whether flash is enabled
     private var flashEnabled = false
 
     /// The original bar style that was set by the host app
     private var originalBarStyle: UIBarStyle?
+    
+    /// Rectangle detection configuration parameters
+    private let minimumAspectRatio: Float
+    private let maximumAspectRatio: Float
+    private let minimumConfidence: Float
+    private let maximumObservations: Int
+    private let minimumSize: Float
+    private let quadratureTolerance: Float
+    private let preferredCameraType: CameraType
+    private let macroModeEnabled: Bool
 
     private lazy var shutterButton: ShutterButton = {
         let button = ShutterButton()
@@ -43,42 +44,87 @@ public final class ScannerViewController: UIViewController {
         return button
     }()
 
-    private lazy var autoScanButton: UIBarButtonItem = {
-        let title = NSLocalizedString("wescan.scanning.auto", tableName: nil, bundle: Bundle(for: ScannerViewController.self), value: "Auto", comment: "The auto button state")
-        let button = UIBarButtonItem(title: title, style: .plain, target: self, action: #selector(toggleAutoScan))
-        button.tintColor = .white
 
+
+    private lazy var flashButton: UIBarButtonItem = {
+        let button = UIBarButtonItem(
+            image: UIImage(systemName: "bolt.fill"), 
+            style: .plain, 
+            target: self, 
+            action: #selector(toggleFlash)
+        )
         return button
     }()
 
-    private lazy var flashButton: UIBarButtonItem = {
-        let image = UIImage(systemName: "bolt.fill", named: "flash", in: Bundle(for: ScannerViewController.self), compatibleWith: nil)
-        let button = UIBarButtonItem(image: image, style: .plain, target: self, action: #selector(toggleFlash))
-        button.tintColor = .white
-
+    private lazy var autoScanButton: UIBarButtonItem = {
+        let button = UIBarButtonItem(
+            title: NSLocalizedString("wescan.scanning.auto", tableName: nil, bundle: Bundle(for: ScannerViewController.self), value: "Auto", comment: "The auto button state"),
+            style: .plain, 
+            target: self, 
+            action: #selector(toggleAutoScan)
+        )
         return button
     }()
 
     private lazy var activityIndicator: UIActivityIndicatorView = {
-        let activityIndicator = UIActivityIndicatorView(style: .gray)
+        let activityIndicator = UIActivityIndicatorView(style: .large)
         activityIndicator.hidesWhenStopped = true
         activityIndicator.translatesAutoresizingMaskIntoConstraints = false
         return activityIndicator
     }()
 
+    private var captureSessionManager: CaptureSessionManager?
+    private let videoPreviewLayer = AVCaptureVideoPreviewLayer()
+
+    /// The view that shows the focus rectangle (when the user taps to focus, similar to the Camera app)
+    private var focusRectangle: FocusRectangleView!
+
+    /// The view that draws the detected rectangles.
+    private let quadView = QuadrilateralView()
+
     // MARK: - Life Cycle
+    
+    public init(minimumAspectRatio: Float = 0.3,
+                maximumAspectRatio: Float = 1.0,
+                minimumConfidence: Float = 0.8,
+                maximumObservations: Int = 1,
+                minimumSize: Float = 0.2,
+                quadratureTolerance: Float = 30.0,
+                preferredCameraType: CameraType = .auto,
+                macroModeEnabled: Bool = false) {
+        self.minimumAspectRatio = minimumAspectRatio
+        self.maximumAspectRatio = maximumAspectRatio
+        self.minimumConfidence = minimumConfidence
+        self.maximumObservations = maximumObservations
+        self.minimumSize = minimumSize
+        self.quadratureTolerance = quadratureTolerance
+        self.preferredCameraType = preferredCameraType
+        self.macroModeEnabled = macroModeEnabled
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        self.minimumAspectRatio = 0.3
+        self.maximumAspectRatio = 1.0
+        self.minimumConfidence = 0.8
+        self.maximumObservations = 1
+        self.minimumSize = 0.2
+        self.quadratureTolerance = 30.0
+        self.preferredCameraType = .auto
+        self.macroModeEnabled = false
+        super.init(coder: coder)
+    }
 
     override public func viewDidLoad() {
         super.viewDidLoad()
-
-        title = nil
+        
+        title = NSLocalizedString("wescan.scanning.title", tableName: nil, bundle: Bundle(for: ScannerViewController.self), value: "Scanning", comment: "The title of the ScannerViewController")
         view.backgroundColor = UIColor.black
 
         setupViews()
-        setupNavigationBar()
         setupConstraints()
 
-        captureSessionManager = CaptureSessionManager(videoPreviewLayer: videoPreviewLayer, delegate: self)
+        captureSessionManager = CaptureSessionManager(videoPreviewLayer: videoPreviewLayer, delegate: self, minimumAspectRatio: minimumAspectRatio, maximumAspectRatio: maximumAspectRatio, minimumConfidence: minimumConfidence, maximumObservations: maximumObservations, minimumSize: minimumSize, quadratureTolerance: quadratureTolerance, preferredCameraType: preferredCameraType, macroModeEnabled: macroModeEnabled)
 
         originalBarStyle = navigationController?.navigationBar.barStyle
 
@@ -135,8 +181,9 @@ public final class ScannerViewController: UIViewController {
 
         if UIImagePickerController.isFlashAvailable(for: .rear) == false {
             let flashOffImage = UIImage(systemName: "bolt.slash.fill", named: "flashUnavailable", in: Bundle(for: ScannerViewController.self), compatibleWith: nil)
-            flashButton.image = flashOffImage
-            flashButton.tintColor = UIColor.lightGray
+            let disabledFlashButton = UIBarButtonItem(image: flashOffImage, style: .plain, target: self, action: #selector(toggleFlash))
+            disabledFlashButton.tintColor = UIColor.lightGray
+            navigationItem.setLeftBarButton(disabledFlashButton, animated: false)
         }
     }
 
@@ -190,13 +237,19 @@ public final class ScannerViewController: UIViewController {
     /// Called when the AVCaptureDevice detects that the subject area has changed significantly. When it's called, we reset the focus so the camera is no longer out of focus.
     @objc private func subjectAreaDidChange() {
         /// Reset the focus and exposure back to automatic
-        do {
-            try CaptureSession.current.resetFocusToAuto()
-        } catch {
-            let error = ImageScannerControllerError.inputDevice
-            guard let captureSessionManager else { return }
-            captureSessionManager.delegate?.captureSessionManager(captureSessionManager, didFailWithError: error)
-            return
+        // Reset focus to auto using our capture session manager if available
+        if let captureSessionManager = captureSessionManager {
+            captureSessionManager.resetFocusToAuto()
+        } else {
+            // Fallback to old method for compatibility
+            do {
+                try CaptureSession.current.resetFocusToAuto()
+            } catch {
+                let error = ImageScannerControllerError.inputDevice
+                guard let captureSessionManager else { return }
+                captureSessionManager.delegate?.captureSessionManager(captureSessionManager, didFailWithError: error)
+                return
+            }
         }
 
         /// Remove the focus rectangle if one exists
@@ -215,13 +268,19 @@ public final class ScannerViewController: UIViewController {
         focusRectangle = FocusRectangleView(touchPoint: touchPoint)
         view.addSubview(focusRectangle)
 
-        do {
-            try CaptureSession.current.setFocusPointToTapPoint(convertedTouchPoint)
-        } catch {
-            let error = ImageScannerControllerError.inputDevice
-            guard let captureSessionManager else { return }
-            captureSessionManager.delegate?.captureSessionManager(captureSessionManager, didFailWithError: error)
-            return
+        // Set focus point using our capture session manager if available
+        if let captureSessionManager = captureSessionManager {
+            captureSessionManager.setFocusPointToTapPoint(convertedTouchPoint)
+        } else {
+            // Fallback to old method for compatibility
+            do {
+                try CaptureSession.current.setFocusPointToTapPoint(convertedTouchPoint)
+            } catch {
+                let error = ImageScannerControllerError.inputDevice
+                guard let captureSessionManager else { return }
+                captureSessionManager.delegate?.captureSessionManager(captureSessionManager, didFailWithError: error)
+                return
+            }
         }
     }
 
@@ -236,10 +295,22 @@ public final class ScannerViewController: UIViewController {
     @objc private func toggleAutoScan() {
         if CaptureSession.current.isAutoScanEnabled {
             CaptureSession.current.isAutoScanEnabled = false
-            autoScanButton.title = NSLocalizedString("wescan.scanning.manual", tableName: nil, bundle: Bundle(for: ScannerViewController.self), value: "Manual", comment: "The manual button state")
+            let manualButton = UIBarButtonItem(
+                title: NSLocalizedString("wescan.scanning.manual", tableName: nil, bundle: Bundle(for: ScannerViewController.self), value: "Manual", comment: "The manual button state"),
+                style: .plain,
+                target: self,
+                action: #selector(toggleAutoScan)
+            )
+            navigationItem.setRightBarButton(manualButton, animated: false)
         } else {
             CaptureSession.current.isAutoScanEnabled = true
-            autoScanButton.title = NSLocalizedString("wescan.scanning.auto", tableName: nil, bundle: Bundle(for: ScannerViewController.self), value: "Auto", comment: "The auto button state")
+            let autoButton = UIBarButtonItem(
+                title: NSLocalizedString("wescan.scanning.auto", tableName: nil, bundle: Bundle(for: ScannerViewController.self), value: "Auto", comment: "The auto button state"),
+                style: .plain,
+                target: self,
+                action: #selector(toggleAutoScan)
+            )
+            navigationItem.setRightBarButton(autoButton, animated: false)
         }
     }
 
@@ -252,16 +323,19 @@ public final class ScannerViewController: UIViewController {
         switch state {
         case .on:
             flashEnabled = true
-            flashButton.image = flashImage
-            flashButton.tintColor = .yellow
+            let flashOnButton = UIBarButtonItem(image: flashImage, style: .plain, target: self, action: #selector(toggleFlash))
+            flashOnButton.tintColor = .yellow
+            navigationItem.setLeftBarButton(flashOnButton, animated: false)
         case .off:
             flashEnabled = false
-            flashButton.image = flashImage
-            flashButton.tintColor = .white
+            let flashOffButton = UIBarButtonItem(image: flashImage, style: .plain, target: self, action: #selector(toggleFlash))
+            flashOffButton.tintColor = .white
+            navigationItem.setLeftBarButton(flashOffButton, animated: false)
         case .unknown, .unavailable:
             flashEnabled = false
-            flashButton.image = flashOffImage
-            flashButton.tintColor = UIColor.lightGray
+            let flashUnavailableButton = UIBarButtonItem(image: flashOffImage, style: .plain, target: self, action: #selector(toggleFlash))
+            flashUnavailableButton.tintColor = UIColor.lightGray
+            navigationItem.setLeftBarButton(flashUnavailableButton, animated: false)
         }
     }
 

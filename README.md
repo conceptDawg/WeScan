@@ -134,3 +134,4 @@ As the creators, and maintainers of this project, we're glad to invite contribut
 ## License
 
 **WeScan** is available under the MIT license. See the [LICENSE](https://github.com/WeTransfer/WeScan/blob/develop/LICENSE) file for more info.
+

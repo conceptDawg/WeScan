@@ -44,6 +44,16 @@ public final class ImageScannerController: UINavigationController {
 
     /// The object that acts as the delegate of the `ImageScannerController`.
     public weak var imageScannerDelegate: ImageScannerControllerDelegate?
+    
+    /// Rectangle detection configuration parameters
+    private let minimumAspectRatio: Float
+    private let maximumAspectRatio: Float
+    private let minimumConfidence: Float
+    private let maximumObservations: Int
+    private let minimumSize: Float
+    private let quadratureTolerance: Float
+    private let preferredCameraType: CameraType
+    private let macroModeEnabled: Bool
 
     // MARK: - Life Cycle
 
@@ -60,8 +70,35 @@ public final class ImageScannerController: UINavigationController {
         return .portrait
     }
 
-    public required init(image: UIImage? = nil, delegate: ImageScannerControllerDelegate? = nil) {
-        super.init(rootViewController: ScannerViewController())
+    public init(image: UIImage? = nil, 
+                delegate: ImageScannerControllerDelegate? = nil,
+                minimumAspectRatio: Float = 0.3,
+                maximumAspectRatio: Float = 1.0,
+                minimumConfidence: Float = 0.8,
+                maximumObservations: Int = 1,
+                minimumSize: Float = 0.2,
+                quadratureTolerance: Float = 30.0,
+                preferredCameraType: CameraType = .auto,
+                macroModeEnabled: Bool = false) {
+        self.minimumAspectRatio = minimumAspectRatio
+        self.maximumAspectRatio = maximumAspectRatio
+        self.minimumConfidence = minimumConfidence
+        self.maximumObservations = maximumObservations
+        self.minimumSize = minimumSize
+        self.quadratureTolerance = quadratureTolerance
+        self.preferredCameraType = preferredCameraType
+        self.macroModeEnabled = macroModeEnabled
+        
+        super.init(rootViewController: ScannerViewController(
+            minimumAspectRatio: minimumAspectRatio,
+            maximumAspectRatio: maximumAspectRatio,
+            minimumConfidence: minimumConfidence,
+            maximumObservations: maximumObservations,
+            minimumSize: minimumSize,
+            quadratureTolerance: quadratureTolerance,
+            preferredCameraType: preferredCameraType,
+            macroModeEnabled: macroModeEnabled
+        ))
 
         self.imageScannerDelegate = delegate
 
@@ -85,11 +122,27 @@ public final class ImageScannerController: UINavigationController {
     }
 
     override public init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
+        self.minimumAspectRatio = 0.3
+        self.maximumAspectRatio = 1.0
+        self.minimumConfidence = 0.8
+        self.maximumObservations = 1
+        self.minimumSize = 0.2
+        self.quadratureTolerance = 30.0
+        self.preferredCameraType = .auto
+        self.macroModeEnabled = false
         super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
     }
 
     public required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+        self.minimumAspectRatio = 0.3
+        self.maximumAspectRatio = 1.0
+        self.minimumConfidence = 0.8
+        self.maximumObservations = 1
+        self.minimumSize = 0.2
+        self.quadratureTolerance = 30.0
+        self.preferredCameraType = .auto
+        self.macroModeEnabled = false
+        super.init(coder: aDecoder)
     }
 
     private func detect(image: UIImage, completion: @escaping (Quadrilateral?) -> Void) {
@@ -103,7 +156,14 @@ public final class ImageScannerController: UINavigationController {
 
         if #available(iOS 11.0, *) {
             // Use the VisionRectangleDetector on iOS 11 to attempt to find a rectangle from the initial image.
-            VisionRectangleDetector.rectangle(forImage: ciImage, orientation: orientation) { quad in
+            VisionRectangleDetector.rectangle(
+                forImage: ciImage, 
+                orientation: orientation,
+                minimumAspectRatio: minimumAspectRatio,
+                maximumAspectRatio: maximumAspectRatio,
+                minimumConfidence: minimumConfidence,
+                maximumObservations: maximumObservations
+            ) { quad in
                 let detectedQuad = quad?.toCartesian(withHeight: orientedImage.extent.height)
                 completion(detectedQuad)
             }
@@ -125,7 +185,12 @@ public final class ImageScannerController: UINavigationController {
     }
 
     public func resetScanner() {
-        setViewControllers([ScannerViewController()], animated: true)
+        setViewControllers([ScannerViewController(
+            minimumAspectRatio: minimumAspectRatio,
+            maximumAspectRatio: maximumAspectRatio,
+            minimumConfidence: minimumConfidence,
+            maximumObservations: maximumObservations
+        )], animated: true)
     }
 
     private func setupConstraints() {
