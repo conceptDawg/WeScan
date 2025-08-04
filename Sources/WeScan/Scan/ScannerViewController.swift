@@ -343,6 +343,12 @@ public final class ScannerViewController: UIViewController {
         guard let imageScannerController = navigationController as? ImageScannerController else { return }
         imageScannerController.imageScannerDelegate?.imageScannerControllerDidCancel(imageScannerController)
     }
+    
+    /// Switches the camera to the specified type without recreating the controller
+    public func switchCamera(to cameraType: CameraType) {
+        print("📸 ScannerViewController: Switching camera to \(cameraType.rawValue)")
+        captureSessionManager?.switchCamera(to: cameraType)
+    }
 
 }
 

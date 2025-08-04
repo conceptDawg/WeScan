@@ -192,6 +192,15 @@ public final class ImageScannerController: UINavigationController {
             maximumObservations: maximumObservations
         )], animated: true)
     }
+    
+    /// Switches the camera to the specified type without recreating the entire controller
+    public func switchCamera(to cameraType: CameraType) {
+        if let scannerViewController = topViewController as? ScannerViewController {
+            scannerViewController.switchCamera(to: cameraType)
+        } else if let scannerViewController = viewControllers.first as? ScannerViewController {
+            scannerViewController.switchCamera(to: cameraType)
+        }
+    }
 
     private func setupConstraints() {
         let blackFlashViewConstraints = [
@@ -221,6 +230,10 @@ public struct ImageScannerScan {
     }
 
     public var image: UIImage
+    
+    public init(image: UIImage) {
+        self.image = image
+    }
 
     public func generatePDFData(completion: @escaping (Result<Data, ImageScannerError>) -> Void) {
         DispatchQueue.global(qos: .userInteractive).async {
@@ -261,7 +274,7 @@ public struct ImageScannerResults {
     /// The detected rectangle which was used to generate the `scannedImage`.
     public var detectedRectangle: Quadrilateral
 
-    init(
+    public init(
         detectedRectangle: Quadrilateral,
         originalScan: ImageScannerScan,
         croppedScan: ImageScannerScan,
